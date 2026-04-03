@@ -14,7 +14,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from . import analyser_service, chat_service, data_service, scraper_service
+import analyser_service, chat_service, data_service, scraper_service
 
 load_dotenv()
 
