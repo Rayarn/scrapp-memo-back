@@ -133,19 +133,24 @@ Réponds avec ce JSON exact :
 async def scrape(params: ScrapeParams):
     async def generate():
         loop = asyncio.get_event_loop()
+        queue: asyncio.Queue = asyncio.Queue()
 
         def run_scrape():
-            return list(scraper_service.scrape(params.model_dump()))
+            for event in scraper_service.scrape(params.model_dump()):
+                loop.call_soon_threadsafe(queue.put_nowait, event)
+            loop.call_soon_threadsafe(queue.put_nowait, None)
 
-        # Run in thread to avoid blocking event loop
-        events = await loop.run_in_executor(None, run_scrape)
+        future = loop.run_in_executor(None, run_scrape)
 
-        final_data = None
-        for event in events:
+        while True:
+            event = await queue.get()
+            if event is None:
+                break
             if event.get("type") == "done":
-                final_data = event.get("data", [])
-                data_service.save_scraped(final_data)
+                data_service.save_scraped(event.get("data", []))
             yield {"data": json.dumps(event)}
+
+        await future
 
     return EventSourceResponse(generate())
 
@@ -248,18 +253,27 @@ async def classify(params: ClassifyParams):
 
     async def generate():
         loop = asyncio.get_event_loop()
+        queue: asyncio.Queue = asyncio.Queue()
 
         def run_classify():
-            return list(analyser_service.classify_corpus(
+            for event in analyser_service.classify_corpus(
                 corpus, params.api_key, params.model,
                 params.max_tokens, params.temperature, params.min_resume_length,
-            ))
+            ):
+                loop.call_soon_threadsafe(queue.put_nowait, event)
+            loop.call_soon_threadsafe(queue.put_nowait, None)
 
-        events = await loop.run_in_executor(None, run_classify)
-        for event in events:
+        future = loop.run_in_executor(None, run_classify)
+
+        while True:
+            event = await queue.get()
+            if event is None:
+                break
             if event.get("type") == "done":
                 data_service.save_analysed(event.get("data", []))
             yield {"data": json.dumps(event)}
+
+        await future
 
     return EventSourceResponse(generate())
 
