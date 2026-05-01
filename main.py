@@ -81,6 +81,13 @@ class KeywordGenParams(BaseModel):
 def health():
     return {"status": "ok", "version": "2.0.0"}
 
+# ---- Clé API
+def get_api_key(provided_key: str = None):
+    """Récupère la clé fournie par le front ou celle du serveur (Render)"""
+    key = provided_key if provided_key and provided_key.strip() else os.getenv("OPENAI_API_KEY")
+    if not key:
+        raise HTTPException(status_code=400, detail="Clé API OpenAI manquante")
+    return key
 
 # ── Keyword generation ────────────────────────────────────────────────────────
 
@@ -91,7 +98,9 @@ async def generate_keywords(params: KeywordGenParams):
     if not params.description.strip():
         raise HTTPException(400, "Description vide")
     try:
-        client = OpenAI(api_key=params.api_key)
+        api_key_to_use = get_api_key(params.api_key)
+        client = OpenAI(api_key=api_key_to_use)
+
         response = client.chat.completions.create(
             model=params.model,
             max_tokens=400,
@@ -111,7 +120,9 @@ Il décrit son sujet ainsi :
 
 Génère deux listes de mots-clés pour paramétrer la recherche :
 1. **mots_inclusion** : mots-clés à rechercher dans la base (termes techniques, modèles, méthodes, concepts liés au sujet). Entre 3 et 8 mots-clés pertinents.
-2. **mots_exclusion** : mots présents dans les TITRES de mémoires qui signaleraient que le mémoire est hors-sujet (autres branches de l'assurance, domaines sans lien). Entre 5 et 15 mots.
+2. **mots_exclusion** : mots présents dans les TITRES de mémoires qui signaleraient que le mémoire est hors-sujet (autres branches de l'assurance, domaines sans lien). Entre 5 et 10 mots.
+
+Par exemple si quelqu'un recherche un mémoire sur les modèles de mortalité, il faudra comme exclusion : Assurance non vie, non-vie, auto, accidents, maladie, santé, automobile. 
 
 Réponds avec ce JSON exact :
 {{
@@ -237,7 +248,7 @@ async def analyse_subject(params: SubjectParams):
         result = analyser_service.analyse_subject(
             corpus,
             {"titre": params.titre, "description": params.description, "mots_cles": params.mots_cles, "angle": params.angle},
-            params.api_key,
+            get_api_key(params.api_key),
             params.model,
         )
         return result
@@ -257,7 +268,7 @@ async def classify(params: ClassifyParams):
 
         def run_classify():
             for event in analyser_service.classify_corpus(
-                corpus, params.api_key, params.model,
+                corpus, get_api_key(params.api_key), params.model,
                 params.max_tokens, params.temperature, params.min_resume_length,
             ):
                 loop.call_soon_threadsafe(queue.put_nowait, event)
@@ -290,7 +301,7 @@ async def index_chat(params: ChatIndexParams):
         raise HTTPException(400, "Aucun mémoire sélectionné")
     try:
         result = await asyncio.get_event_loop().run_in_executor(
-            None, chat_service.index_memoires, selected, params.api_key
+            None, chat_service.index_memoires, selected, get_api_key(params.api_key)
         )
         return result
     except Exception as e:
@@ -301,7 +312,7 @@ async def index_chat(params: ChatIndexParams):
 async def chat_status(api_key: str):
     try:
         status = await asyncio.get_event_loop().run_in_executor(
-            None, chat_service.get_index_status, api_key
+            None, chat_service.get_index_status, get_api_key(api_key)
         )
         return status
     except Exception:
@@ -310,7 +321,7 @@ async def chat_status(api_key: str):
 
 @app.delete("/api/chat/index")
 async def delete_index(api_key: str):
-    await asyncio.get_event_loop().run_in_executor(None, chat_service.delete_index, api_key)
+    await asyncio.get_event_loop().run_in_executor(None, chat_service.delete_index, get_api_key(api_key))
     return {"ok": True}
 
 
@@ -318,7 +329,7 @@ async def delete_index(api_key: str):
 async def chat_message(params: ChatMessage):
     try:
         response = await asyncio.get_event_loop().run_in_executor(
-            None, chat_service.chat, params.message, params.history, params.api_key, params.model
+            None, chat_service.chat, params.message, params.history, get_api_key(params.api_key), params.model
         )
         return {"response": response}
     except Exception as e:
