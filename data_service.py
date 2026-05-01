@@ -2,7 +2,8 @@ import json
 import os
 from datetime import datetime
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
+DATA_DIR = "/data"
+
 
 
 def _ensure():
